@@ -499,6 +499,7 @@ required version PACKAGE-VERSION.  If not, raise an error for DEP-POS."
     (let* ((archive-entries (cdr (assq package-name package-archive-contents)))
            (dual-p (> (length archive-entries) 1))
            (melpa-p (and (= (length archive-entries) 1)
+                         (fboundp 'package-desc-archive)
                          (string= (package-desc-archive (car archive-entries)) "melpa")))
            (snapshot-p (package-lint--snapshot-p package-version)))
       (when (and (not dual-p) (not (eq melpa-p snapshot-p)))
