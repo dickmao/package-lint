@@ -53,6 +53,7 @@ package-lint to operate on secondary files in a package.
 
 The path can be absolute or relative to that of the linted file.")
 (put 'package-lint-main-file 'safe-local-variable #'stringp)
+(require 'subr-x)
 
 
 ;;; Compatibility
@@ -398,7 +399,7 @@ Return a list of well-formed dependencies, same as
             (let ((deps (package-lint--check-well-formed-dependencies position parsed-deps)))
               (package-lint--check-emacs-version deps)
               (package-lint--check-packages-installable deps)
-              (package-lint--check-deps-use-non-snapshot-version deps)
+              (package-lint--check-deps-use-proper-version deps)
               (package-lint--check-deps-do-not-use-zero-versions deps)
               (package-lint--check-cl-lib-version deps)
               deps))
@@ -488,15 +489,23 @@ required version PACKAGE-VERSION.  If not, raise an error for DEP-POS."
            (format "Package %S is not installable." package-name)
            dep-pos))))))
 
-(defun package-lint--check-deps-use-non-snapshot-version (valid-deps)
+(defsubst package-lint--snapshot-p (package-version)
+  "Return t if PACKAGE-VERSION is a melpa-imposed datetime."
+  (version-list-< '(19001201 1) package-version))
+
+(defun package-lint--check-deps-use-proper-version (valid-deps)
   "Warn about any VALID-DEPS on snapshot versions of packages."
-  (pcase-dolist (`(,package-name ,package-version ,dep-pos) valid-deps)
-    (unless (version-list-< package-version '(19001201 1))
-      (package-lint--error-at-point
-       'warning
-       (format "Use a non-snapshot version number for dependency on \"%S\" if possible."
-               package-name)
-       dep-pos))))
+  (pcase-dolist (`(,package-name ,package-version ,line-no ,offset) valid-deps)
+    (let* ((archive (when-let ((archive-entry
+                                (car (alist-get package-name package-archive-contents))))
+                      (package-desc-archive archive-entry)))
+           (melpa-p (string= archive "melpa"))
+           (snapshot-p (package-lint--snapshot-p package-version)))
+      (when (not (eq melpa-p snapshot-p))
+        (package-lint--error
+         line-no offset 'warning
+         (format "Use a %ssnapshot version for %smelpa package \"%S\"."
+                 (if melpa-p "" "non-") (if melpa-p "" "non-") package-name))))))
 
 (defun package-lint--check-deps-do-not-use-zero-versions (valid-deps)
   "Warn about VALID-DEPS on \"0\" versions of packages."
