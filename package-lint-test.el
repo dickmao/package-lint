@@ -289,14 +289,14 @@ headers and provide form."
   (when (version-list-<= (version-to-list "24.4") (version-to-list emacs-version))
     (should
      (equal
-      '((6 24 warning "Use a snapshot version for melpa package \"package-lint\"."))
+      '((157 nil warning "Use a snapshot version for melpa package \"package-lint\"."))
       (package-lint-test--run ";; Package-Requires: ((package-lint \"0.2\"))")))))
 
 (ert-deftest package-lint-test-warn-non-snapshot-dep ()
   (when (version-list-<= (version-to-list "24.4") (version-to-list emacs-version))
     (should
      (member
-      '(6 24 warning "Use a non-snapshot version for non-melpa package \"org\".")
+      '(157 nil warning "Use a non-snapshot version for non-melpa package \"org\".")
       (package-lint-test--run ";; Package-Requires: ((org \"20190707\"))")))))
 
 (ert-deftest package-lint-test-dual-listing-dep ()
@@ -306,7 +306,7 @@ headers and provide form."
 (ert-deftest package-lint-test-warn-unversioned-dep ()
   (should
    (equal
-    '((6 24 warning "Use a properly versioned dependency on \"rainbow-mode\" if possible."))
+    '((6 23 warning "Use a properly versioned dependency on \"rainbow-mode\" if possible."))
     (package-lint-test--run ";; Package-Requires: ((rainbow-mode \"0\"))"))))
 
 (ert-deftest package-lint-test-warn-dependency-too-high ()
