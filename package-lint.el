@@ -1230,7 +1230,7 @@ The main loop is this separate function so it's easier to test."
                 (setq last-directory file-directory)
                 (message "Entering directory '%s'" file-directory))
               (pcase-dolist (`(,line ,col ,type ,message) checking-result)
-                (message "%s:%d:%d: %s: %s"
+                (message "%s:%d:%s: %s: %s"
                          base line col type message)))))))))
 
 ;;;###autoload
