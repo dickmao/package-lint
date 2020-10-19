@@ -7,7 +7,7 @@
 ;; URL: https://github.com/purcell/package-lint
 ;; Keywords: lisp
 ;; Version: 0
-;; Package-Requires: ((cl-lib "0.5") (emacs "24.1") (let-alist "1.0.6"))
+;; Package-Requires: ((cl-lib "0.5") (emacs "24.4") (let-alist "1.0.6"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -53,6 +53,7 @@ package-lint to operate on secondary files in a package.
 
 The path can be absolute or relative to that of the linted file.")
 (put 'package-lint-main-file 'safe-local-variable #'stringp)
+(require 'subr-x)
 
 
 ;;; Compatibility
@@ -248,6 +249,8 @@ symbol such as 'variable-added.")
              #'package-lint--check-globalized-minor-mode)
             (package-lint--check-objects-by-regexp
              "(defgroup\\s-" #'package-lint--check-defgroup)
+            (package-lint--check-objects-by-regexp
+             "(defcustom\\s-" #'package-lint--check-defcustom)
 
             (package-lint--check-no-use-of-cl)
             (package-lint--check-no-use-of-cl-lib-sublibraries)
@@ -398,7 +401,7 @@ Return a list of well-formed dependencies, same as
             (let ((deps (package-lint--check-well-formed-dependencies position parsed-deps)))
               (package-lint--check-emacs-version deps)
               (package-lint--check-packages-installable deps)
-              (package-lint--check-deps-use-non-snapshot-version deps)
+              (package-lint--check-deps-use-proper-version deps)
               (package-lint--check-deps-do-not-use-zero-versions deps)
               (package-lint--check-cl-lib-version deps)
               deps))
@@ -488,15 +491,24 @@ required version PACKAGE-VERSION.  If not, raise an error for DEP-POS."
            (format "Package %S is not installable." package-name)
            dep-pos))))))
 
-(defun package-lint--check-deps-use-non-snapshot-version (valid-deps)
+(defsubst package-lint--snapshot-p (package-version)
+  "Return t if PACKAGE-VERSION is a melpa-imposed datetime."
+  (version-list-< '(19001201 1) package-version))
+
+(defun package-lint--check-deps-use-proper-version (valid-deps)
   "Warn about any VALID-DEPS on snapshot versions of packages."
-  (pcase-dolist (`(,package-name ,package-version ,dep-pos) valid-deps)
-    (unless (version-list-< package-version '(19001201 1))
-      (package-lint--error-at-point
-       'warning
-       (format "Use a non-snapshot version number for dependency on \"%S\" if possible."
-               package-name)
-       dep-pos))))
+  (pcase-dolist (`(,package-name ,package-version ,line-no ,offset) valid-deps)
+    (let* ((archive-entries (cdr (assq package-name package-archive-contents)))
+           (dual-p (> (length archive-entries) 1))
+           (melpa-p (and (= (length archive-entries) 1)
+                         (fboundp 'package-desc-archive)
+                         (string= (package-desc-archive (car archive-entries)) "melpa")))
+           (snapshot-p (package-lint--snapshot-p package-version)))
+      (when (and (not dual-p) (not (eq melpa-p snapshot-p)))
+        (package-lint--error
+         line-no offset 'warning
+         (format "Use a %ssnapshot version for %smelpa package \"%S\"."
+                 (if melpa-p "" "non-") (if melpa-p "" "non-") package-name))))))
 
 (defun package-lint--check-deps-do-not-use-zero-versions (valid-deps)
   "Warn about VALID-DEPS on \"0\" versions of packages."
@@ -926,6 +938,8 @@ Valid definition names are:
            (format
             "Global minor modes should be autoloaded or, rarely, `:require' their defining file (i.e. \":require '%s\"), to support the customization variable of the same name." feature)))))))
 
+(defvar package-lint--defgroups nil "Keep track of defgroups to xref defcustoms.")
+
 (defun package-lint--check-defgroup (def)
   "Offer up concerns about the customization group definition DEF."
   (when (symbolp (cadr def))
@@ -940,7 +954,22 @@ Valid definition names are:
   (unless (memq :group def)
     (package-lint--error-at-point
      'error
-     "Customization groups should specify a parent via `:group'.")))
+     "Customization groups should specify a parent via `:group'."))
+  (push (cadr def) package-lint--defgroups))
+
+(defun package-lint--check-defcustom (def)
+  "If :group is same as namespace in defcustom DEF, then make sure it got defgroup'ed."
+  (let* ((cus-name (symbol-name (cadr def)))
+         (props (nthcdr 4 def))
+         (group-sym (eval (plist-get props :group)))
+         (prefix (package-lint--get-package-prefix)))
+    ;; if file "foo-baz.el" contains defcustoms for group "foo", withhold judgment.
+    (when (string= (symbol-name group-sym) prefix)
+      (unless (memq group-sym package-lint--defgroups)
+        (package-lint--error-at-point
+         'error
+         (format "Defcustom of `%s' lacks corresponding defgroup of `%s'."
+                 cus-name (symbol-name group-sym)))))))
 
 (defun package-lint--check-defalias (prefix def)
   "Offer up concerns about the customization group definition DEF.
@@ -1220,7 +1249,7 @@ The main loop is this separate function so it's easier to test."
                 (setq last-directory file-directory)
                 (message "Entering directory '%s'" file-directory))
               (pcase-dolist (`(,line ,col ,type ,message) checking-result)
-                (message "%s:%d:%d: %s: %s"
+                (message "%s:%d:%s: %s: %s"
                          base line col type message)))))))))
 
 ;;;###autoload
